@@ -26,7 +26,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--workers', type=int, help='number of data loading workers', default=0)
 parser.add_argument('--epochs', type=int, default=20, help='number of epochs to train for')
 parser.add_argument('--cuda', action='store_true', help='enables cuda')
-parser.add_argument('--gpu', type=int, default=0)
+parser.add_argument('--gpu', type=int, default=1)
 
 parser.add_argument('--target', type=int, default=None, help='')
 parser.add_argument('--n-classes', type=int, default=1000, help='')
@@ -36,14 +36,14 @@ parser.add_argument('--iter', type=int, default=500, help='Iterations to find ad
 parser.add_argument('--data', type=str, required=True, help='Input images diretory.')
 
 # TODO: add help msg
-parser.add_argument('--x_min', type=int, default=210, help='')
-parser.add_argument('--x-max', type=int, default=260, help='')
-parser.add_argument('--y-min', type=int, default=210, help='')
-parser.add_argument('--y_max', type=int, default=260, help='')
+parser.add_argument('--x_min', type=int, default=224, help='')
+parser.add_argument('--x-max', type=int, default=224, help='')
+parser.add_argument('--y-min', type=int, default=224, help='')
+parser.add_argument('--y_max', type=int, default=224, help='')
 
-parser.add_argument('--epsilon', type=float, default=5, help='')
+parser.add_argument('--epsilon', type=float, default=10, help='')
 
-parser.add_argument('--image-size', type=int, default=299, help='the height / width of the input image to network')
+parser.add_argument('--image-size', type=int, default=224, help='the height / width of the input image to network')
 
 parser.add_argument('--plot', action='store_true', help='plot all successful adversarial images')
 
@@ -51,7 +51,7 @@ parser.add_argument('--netClassifier', default='inception_v3',
                     choices=model_names, help="The target classifier")
 
 parser.add_argument('--outf', default='./logs', help='folder to output images and model checkpoints')
-parser.add_argument('--manualSeed', type=int, default=1338, help='manual seed')
+parser.add_argument('--manualSeed', type=int, default=123, help='manual seed')
 
 opt = parser.parse_args()
 print(opt)
@@ -209,4 +209,4 @@ def attack(x, patch, mask, source, target):
 
 if __name__ == '__main__':
     print("==> start attack...")
-    main()
+    patch = main()
