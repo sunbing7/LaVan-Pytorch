@@ -33,7 +33,10 @@ parser.add_argument('--n-classes', type=int, default=1000, help='')
 
 parser.add_argument('--iter', type=int, default=500, help='Iterations to find adversarial example.')
 
-parser.add_argument('--data', type=str, required=True, help='Input images diretory.')
+parser.add_argument('--data', type=str,
+                    required=True,
+                    default='/root/autodl-tmp/sunbing/workspace/uap/data/imagenet/validation_folder/val',
+                    help='Input images diretory.')
 
 # TODO: add help msg
 parser.add_argument('--x_min', type=int, default=224, help='')
@@ -47,7 +50,7 @@ parser.add_argument('--image-size', type=int, default=224, help='the height / wi
 
 parser.add_argument('--plot', action='store_true', help='plot all successful adversarial images')
 
-parser.add_argument('--netClassifier', default='inception_v3', 
+parser.add_argument('--netClassifier', default='resnet50',
                     choices=model_names, help="The target classifier")
 
 parser.add_argument('--outf', default='./logs', help='folder to output images and model checkpoints')
