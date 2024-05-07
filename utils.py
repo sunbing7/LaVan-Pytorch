@@ -5,8 +5,9 @@ import torch
 import numpy as np
 
 
-_, term_width = os.popen('stty size', 'r').read().split()
-term_width = int(term_width)
+#_, term_width = os.popen('stty size', 'r').read().split()
+#term_width = int(term_width)
+term_width=80
 
 TOTAL_BAR_LENGTH = 35.
 last_time = time.time()
@@ -185,36 +186,36 @@ def init_patch_square(data_shape, h_min, h_max, w_min, w_max):
     return patch, mask
 
 
-# def square_transform(patch, data_shape, patch_shape, image_size):
-#     # get dummy image 
-#     x = np.zeros(data_shape)
+def square_transform(patch, data_shape, patch_shape, image_size):
+    # get dummy image
+    x = np.zeros(data_shape)
     
-#     # get shape
-#     m_size = patch_shape[-1]
+    # get shape
+    m_size = patch_shape[-1]
     
-#     for i in range(x.shape[0]):
+    for i in range(x.shape[0]):
 
-#         # random rotation
-#         rot = np.random.choice(4)
-#         for j in range(patch[i].shape[0]):
-#             patch[i][j] = np.rot90(patch[i][j], rot)
+        # random rotation
+        rot = np.random.choice(4)
+        for j in range(patch[i].shape[0]):
+            patch[i][j] = np.rot90(patch[i][j], rot)
         
-#         # random location
-#         random_x = np.random.choice(image_size)
-#         if random_x + m_size > x.shape[-1]:
-#             while random_x + m_size > x.shape[-1]:
-#                 random_x = np.random.choice(image_size)
-#         random_y = np.random.choice(image_size)
-#         if random_y + m_size > x.shape[-1]:
-#             while random_y + m_size > x.shape[-1]:
-#                 random_y = np.random.choice(image_size)
+        # random location
+        random_x = np.random.choice(image_size)
+        if random_x + m_size > x.shape[-1]:
+            while random_x + m_size > x.shape[-1]:
+                random_x = np.random.choice(image_size)
+        random_y = np.random.choice(image_size)
+        if random_y + m_size > x.shape[-1]:
+            while random_y + m_size > x.shape[-1]:
+                random_y = np.random.choice(image_size)
        
-#         # apply patch to dummy image  
-#         x[i][0][random_x:random_x+patch_shape[-1], random_y:random_y+patch_shape[-1]] = patch[i][0]
-#         x[i][1][random_x:random_x+patch_shape[-1], random_y:random_y+patch_shape[-1]] = patch[i][1]
-#         x[i][2][random_x:random_x+patch_shape[-1], random_y:random_y+patch_shape[-1]] = patch[i][2]
+        # apply patch to dummy image
+        x[i][0][random_x:random_x+patch_shape[-1], random_y:random_y+patch_shape[-1]] = patch[i][0]
+        x[i][1][random_x:random_x+patch_shape[-1], random_y:random_y+patch_shape[-1]] = patch[i][1]
+        x[i][2][random_x:random_x+patch_shape[-1], random_y:random_y+patch_shape[-1]] = patch[i][2]
     
-#     mask = np.copy(x)
-#     mask[mask != 0] = 1.0
+    mask = np.copy(x)
+    mask[mask != 0] = 1.0
     
-#     return x, mask
+    return x, mask

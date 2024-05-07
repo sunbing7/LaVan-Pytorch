@@ -15,6 +15,8 @@ import torchvision.transforms as transforms
 import torchvision.utils as vutils
 import torchvision.models as models
 
+from data import *
+
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
     and callable(models.__dict__[name]))
@@ -23,30 +25,31 @@ from utils import ToRange255, ToSpaceBGR, \
                   init_patch_square, progress_bar, submatrix
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--option', type=str,
+                    default='attack',
+                    choices=['attack', 'test'],
+                    help='options')
 parser.add_argument('--workers', type=int, help='number of data loading workers', default=0)
-parser.add_argument('--epochs', type=int, default=20, help='number of epochs to train for')
 parser.add_argument('--cuda', action='store_true', help='enables cuda')
-parser.add_argument('--gpu', type=int, default=1)
+parser.add_argument('--gpu', type=int, default=0)
 
-parser.add_argument('--target', type=int, default=None, help='')
-parser.add_argument('--n-classes', type=int, default=1000, help='')
+parser.add_argument('--target', type=int, default=391, help='')
 
 parser.add_argument('--iter', type=int, default=500, help='Iterations to find adversarial example.')
 
 parser.add_argument('--data', type=str,
-                    required=True,
-                    default='/root/autodl-tmp/sunbing/workspace/uap/data/imagenet/validation_folder/val',
-                    help='Input images diretory.')
+                    default='imagenet',
+                    help='dataset name')
+parser.add_argument('--batch_size', type=int, default=32, help='')
+parser.add_argument('--num_sample', type=int, default=2000, help='max number of samples to use')
 
 # TODO: add help msg
-parser.add_argument('--x_min', type=int, default=224, help='')
+parser.add_argument('--x_min', type=int, default=176, help='')
 parser.add_argument('--x-max', type=int, default=224, help='')
-parser.add_argument('--y-min', type=int, default=224, help='')
+parser.add_argument('--y-min', type=int, default=176, help='')
 parser.add_argument('--y_max', type=int, default=224, help='')
 
-parser.add_argument('--epsilon', type=float, default=10, help='')
-
-parser.add_argument('--image-size', type=int, default=224, help='the height / width of the input image to network')
+parser.add_argument('--epsilon', type=float, default=5, help='')
 
 parser.add_argument('--plot', action='store_true', help='plot all successful adversarial images')
 
@@ -80,11 +83,7 @@ if torch.cuda.is_available() and not opt.cuda:
     print("WARNING: You have a CUDA device, so you should probably run with --cuda")
 
 target = opt.target
-n_classes = opt.n_classes
-# patch_type = opt.patch_type
-# patch_size = opt.patch_size
-image_size = opt.image_size
-plot = opt.plot 
+plot = opt.plot
 eps = opt.epsilon
 
 if opt.x_min > opt.x_max:
@@ -101,7 +100,10 @@ if opt.cuda:
 
 
 print('==> Preparing data..')
-mean, std = np.array([0.0, 0.0, 0.0]), np.array([0.5, 0.5, 0.5]) # TODO: set the dataset's mean and std manually
+'''
+mean = [0.485, 0.456, 0.406]
+std = [0.229, 0.224, 0.225]
+mean, std = np.array(mean), np.array(std) # TODO: set the dataset's mean and std manually
 normalize = transforms.Normalize(mean, std)     
 
 image_loader = torch.utils.data.DataLoader(
@@ -114,69 +116,91 @@ image_loader = torch.utils.data.DataLoader(
         normalize,
     ])),
     batch_size=1, shuffle=False, num_workers=opt.workers, pin_memory=True)
- 
+'''
+data_train, data_test = get_data(opt.data)
+
+data_test_loader = torch.utils.data.DataLoader(data_test,
+                                               batch_size=opt.batch_size,
+                                               shuffle=False,
+                                               num_workers=4,
+                                               pin_memory=True)
+
+data_train_loader = torch.utils.data.DataLoader(data_train,
+                                                batch_size=1,
+                                                shuffle=True,
+                                                num_workers=4,
+                                                pin_memory=True)
+
+num_classes, (mean, std), input_size, num_channels = get_data_specs(opt.data)
+n_classes = num_classes
+image_size = input_size
 
 min_in, max_in = 0.0, 1.0
 min_in, max_in = np.array([min_in, min_in, min_in]), np.array([max_in, max_in, max_in])
 
 min_out, max_out = np.min((min_in-mean)/std), np.max((max_in-mean)/std)
 
+
 def main():
     netClassifier.eval()
+    patch = None
     success = 0
     total = 0
-    for batch_idx, (data, labels) in enumerate(image_loader):
+    for batch_idx, (data, labels) in enumerate(data_train_loader):
+        if batch_idx > opt.num_sample:
+            break
         if opt.cuda:
             data = data.cuda()
             labels = labels.cuda()
         data, labels = Variable(data), Variable(labels)
 
+        if patch is None:
+            data_shape = tuple(data.data.shape)
+            patch, mask = init_patch_square(data_shape, opt.x_min, opt.x_max, opt.y_min, opt.y_max)
+
         if target is None:
-           targets = torch.randint_like(labels, low=0, high=n_classes) 
+           targets = torch.randint_like(labels, low=0, high=n_classes)
         else:
             targets = target * torch.ones_like(labels)
 
-
         prediction = netClassifier(data)
 
-        # only computer adversarial examples on examples that are originally classified correctly        
+        # only computer adversarial examples on examples that are originally classified correctly
         if prediction.data.max(1)[1][0] != labels.data[0]:
             continue
-     
+
         total += 1
-        
-        data_shape = tuple(data.data.shape)
-        patch, mask = init_patch_square(data_shape, opt.x_min, opt.x_max, opt.y_min, opt.y_max)
+
         if opt.cuda:
             patch = patch.cuda()
-            mask = mask.cuda()            
+            mask = mask.cuda()
 
         adv_x, mask, patch = attack(data, patch, mask, labels, targets)
 
         adv_label = netClassifier(adv_x).data.max(1)[1][0]
         ori_label = labels.data[0]
-        
+
         if adv_label == target:
             success += 1
-      
-            if plot: 
+
+            if plot:
                 # plot source image
                 vutils.save_image(data.data, "./%s/%d_%d_original.png" %(opt.outf, batch_idx, ori_label), normalize=True)
-                
+
                 # plot adversarial image
                 vutils.save_image(adv_x.data, "./%s/%d_%d_adversarial.png" %(opt.outf, batch_idx, adv_label), normalize=True)
- 
-        masked_patch = torch.mul(mask, patch)
+
+        #masked_patch = torch.mul(mask, patch)
         # patch = masked_patch.data.cpu().numpy()
         # new_patch = np.zeros_like(patch)
-        # for i in range(new_patch.shape[0]): 
-        #     for j in range(new_patch.shape[1]): 
+        # for i in range(new_patch.shape[0]):
+        #     for j in range(new_patch.shape[1]):
         #         new_patch[i][j] = submatrix(patch[i][j])
- 
-        patch = masked_patch
 
-        # log to file  
-        progress_bar(batch_idx, len(image_loader), "Train Patch Success: {:.3f}".format(success/total))
+        #patch = masked_patch
+
+        # log to file
+        progress_bar(batch_idx, len(data_train_loader), "Train Patch Success: {:.3f}".format(success/total))
 
     return patch
 
@@ -193,7 +217,7 @@ def attack(x, patch, mask, source, target):
         adv_x = Variable(adv_x.data, requires_grad=True)
         adv_out = netClassifier(adv_x)
 
-        loss = F.cross_entropy(adv_out, source) -\
+        loss = -F.cross_entropy(adv_out, source) +\
                F.cross_entropy(adv_out, target)
 
         loss.backward()
@@ -210,6 +234,59 @@ def attack(x, patch, mask, source, target):
     return adv_x, mask, patch 
 
 
+def evaluate(patch_in):
+    netClassifier.eval()
+    success = 0
+    correct = 0
+    clean_correct = 0
+    total = 0
+    for batch_idx, (data, labels) in enumerate(data_test_loader):
+        if opt.cuda:
+            data = data.cuda()
+            labels = labels.cuda()
+        data, labels = Variable(data), Variable(labels)
+
+        if target is None:
+            targets = torch.randint_like(labels, low=0, high=n_classes)
+        else:
+            targets = target * torch.ones_like(labels)
+
+        total += len(data)
+
+        data_shape = tuple(data.data.shape)
+        _, mask = init_patch_square(data_shape, opt.x_min, opt.x_max, opt.y_min, opt.y_max)
+        if opt.cuda:
+            patch_in = patch_in.cuda()
+            mask = mask.cuda()
+
+        adv_x = torch.mul((1 - mask), data) + torch.mul(mask, patch_in)
+
+        adv_label = netClassifier(adv_x).data.max(1)[1]
+        clean_label = netClassifier(data).data.max(1)[1]
+
+        success += torch.sum(targets.data == adv_label)
+
+        correct += torch.sum(labels.data == adv_label)
+
+        clean_correct += torch.sum(labels.data == clean_label)
+
+    return success / total * 100., correct / total * 100., clean_correct / total * 100.
+
+
 if __name__ == '__main__':
-    print("==> start attack...")
-    patch = main()
+    if opt.option == 'attack':
+        print("==> start attack...")
+        patch = main()
+        torch.save(patch, 'uap/' + str(opt.netClassifier) + '-' + str(opt.data)
+                   + '/' + 'uap_' + str(opt.target) + '.pth')
+        asr, acc, clean_acc = evaluate(patch)
+        print('/n')
+        print('Evaluation: clean accuracy: {:.1f}, adv accuracy: {:.1f}, asr: {:.1f}'
+              .format(clean_acc, acc, asr))
+    elif opt.option == 'test':
+        print("==> start evaluation...")
+        patch = torch.load('uap/' + str(opt.netClassifier) + '-' + str(opt.data)
+                           + '/' + 'uap_' + str(opt.target) + '.pth')
+        asr, acc, clean_acc = evaluate(patch)
+        print('Evaluation: clean accuracy: {:.1f}, adv accuracy: {:.1f}, asr: {:.1f}'
+              .format(clean_acc, acc, asr))
