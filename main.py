@@ -17,6 +17,9 @@ import torchvision.models as models
 
 from data import *
 
+import warnings
+warnings.filterwarnings("ignore")
+
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
     and callable(models.__dict__[name]))
@@ -24,10 +27,13 @@ model_names = sorted(name for name in models.__dict__
 from utils import ToRange255, ToSpaceBGR, \
                   init_patch_square, progress_bar, submatrix
 
+
+
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--option', type=str,
                     default='attack',
-                    choices=['attack', 'test'],
+                    choices=['attack', 'test', 'adaptive_attack'],
                     help='options')
 parser.add_argument('--workers', type=int, help='number of data loading workers', default=0)
 parser.add_argument('--cuda', action='store_true', help='enables cuda')
@@ -40,6 +46,11 @@ parser.add_argument('--iter', type=int, default=500, help='Iterations to find ad
 parser.add_argument('--data', type=str,
                     default='imagenet',
                     help='dataset name')
+
+parser.add_argument('--model_name', type=str,
+                    default='None',
+                    help='model name')
+
 parser.add_argument('--batch_size', type=int, default=32, help='')
 parser.add_argument('--num_sample', type=int, default=2000, help='max number of samples to use')
 
@@ -93,8 +104,12 @@ if opt.y_min > opt.y_max:
 
 
 print("==> creating model ")
-netClassifier = models.__dict__[opt.netClassifier](pretrained=True) # num_classes = 1000 for imagenet
-    # pretrainedmodels.__dict__[opt.netClassifier](num_classes=opt.n_classes, pretrained='imagenet')
+if opt.model_name != 'None':
+    netClassifier = torch.load(opt.model_name, map_location=torch.device('cpu'))
+else:
+    netClassifier = models.__dict__[opt.netClassifier](pretrained=True) # num_classes = 1000 for imagenet
+        # pretrainedmodels.__dict__[opt.netClassifier](num_classes=opt.n_classes, pretrained='imagenet')
+
 if opt.cuda:
     netClassifier.cuda()
 
@@ -240,6 +255,7 @@ def evaluate(patch_in):
     correct = 0
     clean_correct = 0
     total = 0
+    adv_total = 0
     for batch_idx, (data, labels) in enumerate(data_test_loader):
         if opt.cuda:
             data = data.cuda()
@@ -260,31 +276,39 @@ def evaluate(patch_in):
             mask = mask.cuda()
 
         adv_x = torch.mul((1 - mask), data) + torch.mul(mask, patch_in)
+        adv_x = torch.clamp(adv_x, min_out, max_out)
 
         adv_label = netClassifier(adv_x).data.max(1)[1]
         clean_label = netClassifier(data).data.max(1)[1]
 
-        success += torch.sum(targets.data == adv_label)
+        success += torch.sum((targets.data == adv_label) & (clean_label != targets.data))
+
+        adv_total += torch.sum(clean_label != targets.data)
 
         correct += torch.sum(labels.data == adv_label)
 
         clean_correct += torch.sum(labels.data == clean_label)
 
-    return success / total * 100., correct / total * 100., clean_correct / total * 100.
+    return success / adv_total * 100., correct / total * 100., clean_correct / total * 100.
 
 
 if __name__ == '__main__':
-    if opt.option == 'attack':
-        print("==> start attack...")
+    if 'attack' in opt.option:
+        print("==> start attack at target class {} ...".format(opt.target))
         patch = main()
-        torch.save(patch, 'uap/' + str(opt.netClassifier) + '-' + str(opt.data)
-                   + '/' + 'uap_' + str(opt.target) + '.pth')
+        if 'adaptive' in opt.option:
+            fn = ('uap/' + str(opt.netClassifier) + '-' + str(opt.data)
+                  + '/' + 'uap_' + str(opt.target) + '_adaptive.pth')
+        else:
+            fn = 'uap/' + str(opt.netClassifier) + '-' + str(opt.data) + '/' + 'uap_' + str(opt.target) + '.pth'
+        torch.save(patch, fn)
+
         asr, acc, clean_acc = evaluate(patch)
         print('/n')
         print('Evaluation: clean accuracy: {:.1f}, adv accuracy: {:.1f}, asr: {:.1f}'
               .format(clean_acc, acc, asr))
     elif opt.option == 'test':
-        print("==> start evaluation...")
+        print("==> start evaluation at target class {} ...".format(opt.target))
         patch = torch.load('uap/' + str(opt.netClassifier) + '-' + str(opt.data)
                            + '/' + 'uap_' + str(opt.target) + '.pth')
         asr, acc, clean_acc = evaluate(patch)
