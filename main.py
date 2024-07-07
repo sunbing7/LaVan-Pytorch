@@ -14,8 +14,10 @@ import torchvision.datasets as dset
 import torchvision.transforms as transforms
 import torchvision.utils as vutils
 import torchvision.models as models
+from collections import OrderedDict
 
 from data import *
+from networks.network import *
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -47,6 +49,9 @@ parser.add_argument('--data', type=str,
                     default='imagenet',
                     help='dataset name')
 
+parser.add_argument('--arch', type=str,
+                    default='resnet50')
+
 parser.add_argument('--model_name', type=str,
                     default='None',
                     help='model name')
@@ -64,9 +69,6 @@ parser.add_argument('--epsilon', type=float, default=5, help='')
 
 parser.add_argument('--plot', action='store_true', help='plot all successful adversarial images')
 
-parser.add_argument('--netClassifier', default='resnet50',
-                    choices=model_names, help="The target classifier")
-
 parser.add_argument('--outf', default='./logs', help='folder to output images and model checkpoints')
 parser.add_argument('--manualSeed', type=int, default=123, help='manual seed')
 
@@ -77,6 +79,43 @@ try:
     os.makedirs(opt.outf)
 except OSError:
     pass
+
+
+def load_model(args):
+    # Init model, criterion, and optimizer
+    # get a path for loading the model to be attacked
+    model_path = './models'
+    model_weights_path = os.path.join(model_path, args.model_name)
+    num_classes, (mean, std), input_size, num_channels = get_data_specs(args.data)
+    target_network = get_network(args.arch,
+                                 input_size=input_size,
+                                 num_classes=num_classes,
+                                 finetune=False)
+
+    if args.data == "caltech" or args.data == 'asl':
+        if 'repaired' in args.model_name:
+            target_network = torch.load(model_weights_path, map_location=torch.device('cpu'))
+        else:
+            #state dict
+            orig_state_dict = torch.load(model_weights_path, map_location=torch.device('cpu'))
+            new_state_dict = OrderedDict()
+            for k, v in target_network.state_dict().items():
+                if k in orig_state_dict.keys():
+                    new_state_dict[k] = orig_state_dict[k]
+
+            target_network.load_state_dict(new_state_dict)
+
+    elif args.data == 'eurosat':
+        target_network = torch.load(model_weights_path, map_location=torch.device('cpu'))
+    elif args.data == "imagenet" and 'repaired' in args.model_name:
+        target_network = torch.load(model_weights_path, map_location=torch.device('cpu'))
+
+    target_network = torch.nn.DataParallel(target_network, device_ids=list(range(1)))
+    if args.cuda:
+        target_network = target_network.cuda()
+
+    return target_network
+
 
 if opt.manualSeed is None:
     opt.manualSeed = random.randint(1, 10000)
@@ -104,6 +143,10 @@ if opt.y_min > opt.y_max:
 
 
 print("==> creating model ")
+
+netClassifier = load_model(opt)
+
+'''
 if opt.model_name != 'None':
     netClassifier = torch.load(opt.model_name, map_location=torch.device('cpu'))
 else:
@@ -112,7 +155,7 @@ else:
 
 if opt.cuda:
     netClassifier.cuda()
-
+'''
 
 print('==> Preparing data..')
 '''
@@ -297,10 +340,10 @@ if __name__ == '__main__':
         print("==> start attack at target class {} ...".format(opt.target))
         patch = main()
         if 'adaptive' in opt.option:
-            fn = ('uap/' + str(opt.netClassifier) + '-' + str(opt.data)
+            fn = ('uap/' + str(opt.arch) + '-' + str(opt.data)
                   + '/' + 'uap_' + str(opt.target) + '_adaptive.pth')
         else:
-            fn = 'uap/' + str(opt.netClassifier) + '-' + str(opt.data) + '/' + 'uap_' + str(opt.target) + '.pth'
+            fn = 'uap/' + str(opt.arch) + '-' + str(opt.data) + '/' + 'uap_' + str(opt.target) + '.pth'
         torch.save(patch, fn)
 
         asr, acc, clean_acc = evaluate(patch)
@@ -309,7 +352,7 @@ if __name__ == '__main__':
               .format(clean_acc, acc, asr))
     elif opt.option == 'test':
         print("==> start evaluation at target class {} ...".format(opt.target))
-        patch = torch.load('uap/' + str(opt.netClassifier) + '-' + str(opt.data)
+        patch = torch.load('uap/' + str(opt.arch) + '-' + str(opt.data)
                            + '/' + 'uap_' + str(opt.target) + '.pth')
         asr, acc, clean_acc = evaluate(patch)
         print('Evaluation: clean accuracy: {:.1f}, adv accuracy: {:.1f}, asr: {:.1f}'

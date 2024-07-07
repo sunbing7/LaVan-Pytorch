@@ -171,7 +171,8 @@ class ToRange255(object):
 
 def init_patch_square(data_shape, h_min, h_max, w_min, w_max):
     n, c, h, w = data_shape
-
+    #print('[debug] h_min, h_max, w_min, w_max {} {} {} {}'.format(h_min, h_max, w_min, w_max))
+    #print('[debug] n, c, h, w {} {} {} {}'.format(n, c, h, w))
     # get dummy image 
     patch = torch.zeros(data_shape)
     mask = torch.zeros(data_shape)
